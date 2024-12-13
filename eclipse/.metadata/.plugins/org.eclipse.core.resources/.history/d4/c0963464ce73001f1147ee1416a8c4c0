@@ -1,0 +1,385 @@
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <util/delay.h>
+unsigned char secs1=0,secs2=0, minutes1=0 , minutes2=0 , hours1=0 , hours2=0 ,flag=0;
+void display (void)
+{
+	PORTA=(1<<PA5);
+	PORTC=(PORTC&0xf0)|(secs1&0x0f);
+	_delay_ms(2);
+	PORTA=(1<<PA4);
+	PORTC=(PORTC&0xf0)|(secs2&0x0f);
+	_delay_ms(2);
+	PORTA=(1<<PA3);
+	PORTC=(PORTC&0xf0)|(minutes1&0x0f);
+	_delay_ms(2);
+	PORTA=(1<<PA2);
+	PORTC=(PORTC&0xf0)|(minutes2&0x0f);
+	_delay_ms(2);
+	PORTA=(1<<PA1);
+	PORTC=(PORTC&0xf0)|(hours1&0x0f);
+	_delay_ms(2);
+	PORTA=(1<<PA0);
+	PORTC=(PORTC&0xf0)|(hours2&0x0f);
+	_delay_ms(2);
+}
+void time_increment(void)
+{
+	secs1++;
+	if(secs1==10)
+	{
+		secs2++;
+		secs1=0;
+	}
+	if(secs2==6)
+	{
+		minutes1++;
+		secs2=0;
+	}
+	if(minutes1==10)
+	{
+		minutes2++;
+		minutes1=0;
+	}
+	if(minutes2==6)
+	{
+		hours1++;
+		minutes2=0;
+	}
+
+	if(hours1==10)
+	{
+		hours1=0;
+		hours2++;
+	}
+	if((hours2==10))
+	{
+		hours1=hours2=0;
+		TCCR1B=TCCR1A=0;
+	}
+}
+void time_decrement(void)
+{
+	if (secs1 > 0) {
+		secs1--;
+	} else {
+		if (secs2 > 0) {
+			secs2--;
+			secs1 = 9;
+		} else {
+			if (minutes1 > 0) {
+				minutes1--;
+				secs2 = 5;
+				secs1 = 9;
+			} else {
+				if (minutes2 > 0) {
+					minutes2--;
+					minutes1 = 9;
+					secs2 = 5;
+					secs1 = 9;
+				} else {
+					if (hours1 > 0) {
+						hours1--;
+						minutes2 = 5;
+						minutes1 = 9;
+						secs2 = 5;
+						secs1 = 9;
+					} else {
+						if (hours2 > 0) {
+							hours2--;
+							hours1 = 9;
+							minutes2 = 5;
+							minutes1 = 9;
+							secs2 = 5;
+							secs1 = 9;
+						}
+					}
+				}
+			}
+		}
+	}
+	if((hours2==0)&(hours1==0)&(minutes2==0)&(minutes1==0)&(secs2==0)&(secs1==0))
+	{
+		PORTD|=(1<<PD0);
+	}
+}
+
+void Timer1_set (void)
+{
+	SREG|=(1<<7);
+	TCCR1A=(1<<COM1B0)|(1<<COM1B1)|(1<<FOC1B);
+	TCCR1B=(1<<WGM12)|(1<<CS10)|(1<<CS12);
+	TCNT1=0;
+	OCR1A=15625;
+	TIMSK&=~(1<<OCIE1A);
+	TIMSK|=(1<<OCIE1B);
+}
+ISR (TIMER1_COMPB_vect)      /* Time Increment */
+{
+	time_increment();
+}
+void Toggle_button (void)   /* Toggle Button */
+{
+	SREG|=(1<<7);
+	DDRB&=~(1<<PB7);
+	PORTB|=(1<<PB7);
+}
+void Timer1_set_decrement(void)
+{
+	SREG|=(1<<7);
+	TIMSK&=~(1<<OCIE1B);
+	TCCR1A=(1<<COM1A0)|(1<<COM1A1)|(1<<FOC1A);
+	_delay_ms(2);
+	TCNT1=0;
+	OCR1A=0;
+	flag=1;
+	while(flag==1)
+	{
+		TCCR1B=0;
+		TCCR1B=(1<<WGM12)|(1<<CS10)|(1<<CS12);
+		display();
+	}
+}
+ISR(TIMER1_COMPA_vect)  /* Toggle Button Time Down */
+{
+	time_decrement();
+}
+void External_Interrupt_INT0 (void) /* Reset Button */
+{
+	SREG|=(1<<7);
+	DDRD&=~(1<<PD2);
+	PORTD|=(1<<PD2);
+	MCUCR|=(1<<ISC01);
+	MCUCR&=~(1<<ISC00);
+	GICR|=(1<<INT0);
+}
+ISR (INT0_vect)   /* Reset Button */
+{
+
+	TCCR1B=TCCR1A=0;
+	hours2=hours1=minutes2=minutes1=secs2=secs1=0;
+	_delay_ms(2);
+	Timer1_set();
+	flag=0;
+}
+void External_Interrupt_INT1 (void)  /* Pause Button */
+{
+	SREG|=(1<<7);
+	DDRD|=(1<<PD3);
+	MCUCR|=(1<<ISC10)|(1<<ISC11);
+	GICR|=(1<<INT1);
+}
+ISR (INT1_vect)           /* Pause Button */
+{
+	TCCR1B=0;
+}
+void  External_Interrupt_INT2 (void)   /* Resume Button */
+{
+	SREG|=(1<<7);
+	DDRB|=(1<<PB2);
+	PORTB|=(1<<PB2);
+	MCUCR&=~(1<<ISC2);
+	GICR|=(1<<INT2);
+}
+ISR (INT2_vect)     /* Resume Button */
+{
+	if(flag==1)
+	{
+		TCCR1B=(1<<WGM12)|(1<<CS10)|(1<<CS12);
+		TIMSK|=(1<<OCIE1A);
+		TCNT1=0;
+		OCR1A=15625;
+		flag=0;
+	}
+	TCCR1B=(1<<WGM12)|(1<<CS10)|(1<<CS12);
+}
+void sec_buttons (void)
+{
+	DDRB&=~(1<<PB6)&~(1<<PB5);
+	PORTB|=(1<<PB6)|(1<<PB5);
+}
+void minute_buttons(void)
+{
+	DDRB&=~(1<<PB4)&~(1<<PB3);
+	PORTB|=(1<<PB4)|(1<<PB3);
+}
+void hour_buttons(void)
+{
+	DDRB&=~(1<<PB1)&~(1<<PB0);
+	PORTB|=(1<<PB1)|(1<<PB0);
+}
+void time_setting (void)
+{
+	if(!(PINB&(1<<PB6)))
+	{
+		_delay_ms(30);
+		if(!(PINB&(1<<PB6)))
+		{
+			secs1++;
+			if(secs1==10)
+			{
+				secs1=0;
+				secs2++;
+			}
+			if(secs2==6)
+			{
+				secs2=0;
+			}
+		}
+		while(!(PINB&(1<<PB6))){
+			display();
+		};
+	}
+	else if(!(PINB&(1<<PB5)))
+	{
+		_delay_ms(30);
+		if(!(PINB&(1<<PB5)))
+		{
+			if((secs1==0)&(secs2==0))
+			{
+				secs1=9;
+				secs2=5;
+			}
+			else if((secs2>0)&(secs1==0))
+			{
+				secs2--;
+				secs1=9;
+			}
+			else{
+				secs1--;
+			}
+		}
+		while(!(PINB&(1<<PB5)))
+		{
+			display();
+		}
+	}
+	if(!(PINB&(1<<PB4)))
+	{
+		_delay_ms(30);
+		if(!(PINB&(1<<PB4)))
+		{
+			minutes1++;
+			if(minutes1==10)
+			{
+				minutes1=0;
+				minutes2++;
+			}
+			if(minutes2==6)
+			{
+				minutes2=0;
+			}
+		}
+		while(!(PINB&(1<<PB4)))
+		{
+			display();
+		}
+	}
+	else if(!(PINB&(1<<PB3)))
+	{
+		_delay_ms(30);
+		if(!(PINB&(1<<PB3)))
+		{
+			if((minutes1==0)&(minutes2==0))
+			{
+				minutes1=9;
+				minutes2=5;
+			}
+			else if((minutes2>0)&(minutes1==0))
+			{
+				minutes2--;
+				minutes1=9;
+			}
+			else{
+				minutes1--;
+			}
+		}
+		while(!(PINB&(1<<PB3)))
+		{
+			display();
+		}
+	}
+	if(!(PINB&(1<<PB1)))
+	{
+		_delay_ms(30);
+		if(!(PINB&(1<<PB1)))
+		{
+			hours1++;
+			if(hours1==10)
+			{
+				hours1=0;
+				hours2++;
+			}
+			if((hours2==10))
+			{
+				hours1=hours2=0;
+			}
+
+		}
+		while(!(PINB&(1<<PB1)))
+		{
+			display();
+		}
+	}
+	else if(!(PINB&(1<<PB0)))
+	{
+		_delay_ms(30);
+		if(!(PINB&(1<<PB0)))
+		{
+			if((hours1==0)&(hours2==0))
+			{
+				hours1=hours2=9;
+			}
+			else if((hours2>0)&(hours1==0))
+			{
+				hours2--;
+				hours1=9;
+			}
+			else {
+				hours1--;
+			}
+		}
+		while(!(PINB&(1<<PB0)))
+		{
+			display();
+		}
+	}
+}
+int main (void)
+{
+	DDRA=(1<<PA0)|(1<<PA1)|(1<<PA2)|(1<<PA3)|(1<<PA4);
+	PORTA=0b00111111;
+	DDRC=DDRC|(0x0f);
+	PORTC=0;
+	/* Alarm Setting */
+	{
+		DDRD|=(1<<PD0);
+		PORTD&=~(1<<PD0);
+	}
+	Timer1_set();    /* COMP B */
+	External_Interrupt_INT0 (); /* Reset Button */
+	External_Interrupt_INT1 (); /* Pause Button */
+	External_Interrupt_INT2();  /* Resume Button */
+	Toggle_button (); /* Toggle Button */
+	sec_buttons();
+	minute_buttons();
+	hour_buttons();
+	for(;;)
+	{
+		display();
+		time_setting();
+		if(!(PINB&(1<<PB7)))
+		{
+			_delay_ms(30);
+			if(!(PINB&(1<<PB7)))
+			{
+				Timer1_set_decrement();
+			}
+			while(!(PINB&(1<<PB7)))
+			{
+				display();
+			}
+		}
+	}
+	return 0;
+}

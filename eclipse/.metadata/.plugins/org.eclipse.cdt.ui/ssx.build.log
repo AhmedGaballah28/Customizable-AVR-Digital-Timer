@@ -1,0 +1,20 @@
+18:47:42 **** Incremental Build of configuration Debug for project ssx ****
+make all 
+Invoking: Print Size
+avr-size --format=avr --mcu=atmega32 ssx.elf
+AVR Memory Usage
+----------------
+Device: atmega32
+
+Program:    5660 bytes (17.3% Full)
+(.text + .data + .bootloader)
+
+Data:         12 bytes (0.6% Full)
+(.data + .bss + .noinit)
+
+
+Finished building: sizedummy
+ 
+
+18:47:42 Build Finished. 0 errors, 0 warnings. (took 303ms)
+

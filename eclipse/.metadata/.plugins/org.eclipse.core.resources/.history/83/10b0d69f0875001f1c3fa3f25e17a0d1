@@ -1,0 +1,133 @@
+#include <avr/io.h>               // Include AVR input/output header
+#include <avr/interrupt.h>        // Include AVR interrupt handling
+#include <util/delay.h>           // Include AVR delay functions
+#define F_CPU 16000000UL          // Define the clock frequency as 16 MHz
+
+// Declare variables for time units and control flags
+unsigned char secs1=0, secs2=0, minutes1=0, minutes2=0, hours1=0, hours2=0, flag_toggle=0, flag_pause=0;
+
+void display (void)               // Function to display the time
+{
+	PORTA=(1<<PA5);               // Set PA5 to display seconds1
+	PORTC=(PORTC&0xf0)|(secs1&0x0f); // Display the low nibble of seconds1
+	_delay_ms(2);
+	PORTA=(1<<PA4);               // Set PA4 to display seconds2
+	PORTC=(PORTC&0xf0)|(secs2&0x0f); // Display the low nibble of seconds2
+	_delay_ms(2);
+	PORTA=(1<<PA3);               // Set PA3 to display minutes1
+	PORTC=(PORTC&0xf0)|(minutes1&0x0f); // Display the low nibble of minutes1
+	_delay_ms(2);
+	PORTA=(1<<PA2);               // Set PA2 to display minutes2
+	PORTC=(PORTC&0xf0)|(minutes2&0x0f); // Display the low nibble of minutes2
+	_delay_ms(2);
+	PORTA=(1<<PA1);               // Set PA1 to display hours1
+	PORTC=(PORTC&0xf0)|(hours1&0x0f); // Display the low nibble of hours1
+	_delay_ms(2);
+	PORTA=(1<<PA0);               // Set PA0 to display hours2
+	PORTC=(PORTC&0xf0)|(hours2&0x0f); // Display the low nibble of hours2
+	_delay_ms(2);
+}
+
+void time_increment(void)         // Function to increment time
+{
+	secs1++;                       // Increment seconds1
+	if(secs1==10)                  // If seconds1 reaches 10, reset and increment seconds2
+	{
+		secs2++;
+		secs1=0;
+	}
+	if(secs2==6)                   // If seconds2 reaches 6, reset and increment minutes1
+	{
+		minutes1++;
+		secs2=0;
+	}
+	if(minutes1==10)               // If minutes1 reaches 10, reset and increment minutes2
+	{
+		minutes2++;
+		minutes1=0;
+	}
+	if(minutes2==6)                // If minutes2 reaches 6, reset and increment hours1
+	{
+		hours1++;
+		minutes2=0;
+	}
+	if(hours1==10)                 // If hours1 reaches 10, reset and increment hours2
+	{
+		hours1=0;
+		hours2++;
+	}
+	if(hours2==10)                 // If hours2 reaches 10, reset all counters and stop timer
+	{
+		hours1=hours2=0;
+		TCCR1B=TCCR1A=0;
+	}
+}
+
+void time_decrement(void)         // Function to decrement time
+{
+	if (secs1 > 0) {               // If seconds1 > 0, decrement seconds1
+		secs1--;
+	} else {
+		if (secs2 > 0) {           // If seconds2 > 0, decrement seconds2 and set seconds1 to 9
+			secs2--;
+			secs1 = 9;
+		} else {
+			if (minutes1 > 0) {    // If minutes1 > 0, decrement minutes1, set seconds2 and seconds1
+				minutes1--;
+				secs2 = 5;
+				secs1 = 9;
+			} else {
+				if (minutes2 > 0) { // If minutes2 > 0, decrement minutes2, set other time units
+					minutes2--;
+					minutes1 = 9;
+					secs2 = 5;
+					secs1 = 9;
+				} else {
+					if (hours1 > 0) { // If hours1 > 0, decrement hours1, set other time units
+						hours1--;
+						minutes2 = 5;
+						minutes1 = 9;
+						secs2 = 5;
+						secs1 = 9;
+					} else {
+						if (hours2 > 0) { // If hours2 > 0, decrement hours2, set other time units
+							hours2--;
+							hours1 = 9;
+							minutes2 = 5;
+							minutes1 = 9;
+							secs2 = 5;
+							secs1 = 9;
+						}
+					}
+				}
+			}
+		}
+	}
+	if((hours2==0)&(hours1==0)&(minutes2==0)&(minutes1==0)&(secs2==0)&(secs1==0)) // If all time units are zero, activate alarm
+	{
+		PORTD|=(1<<PD0);           // Activate alarm on PD0
+	}
+}
+
+void Timer1_set (void)            // Function to set Timer1
+{
+	SREG|=(1<<7);                 // Enable global interrupts
+	TCCR1A=(1<<COM1B0)|(1<<COM1B1)|(1<<FOC1B); // Set timer mode
+	TCCR1B=(1<<WGM12)|(1<<CS10)|(1<<CS12);     // Set timer mode and prescaler
+	TCNT1=0;                       // Reset timer count
+	OCR1A=15625;                   // Set compare value for Timer1
+	TIMSK&=~(1<<OCIE1A);           // Disable Output Compare A Match interrupt
+	TIMSK|=(1<<OCIE1B);            // Enable Output Compare B Match interrupt
+}
+
+ISR (TIMER1_COMPB_vect)           // Interrupt Service Routine for Timer1 Compare B
+{
+	if(flag_toggle==0)             // If toggle flag is 0, increment time
+	{
+		time_increment();
+	}
+	else if(flag_toggle==1)        // If toggle flag is 1, decrement time
+	{
+		time_decrement();
+	}
+}
